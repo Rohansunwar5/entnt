@@ -4,6 +4,7 @@ export interface IOnBoardUserParams {
   firstName: string;
   lastName: string;
   email: string;
+  role: string;
   password?: string;
 }
 
@@ -16,7 +17,7 @@ export class UserRepository {
 
   async onBoardUser(params: IOnBoardUserParams): Promise<IUser> {
     const {
-      firstName, lastName, email,
+      firstName, lastName, email, role,
       password,
     } = params;
 

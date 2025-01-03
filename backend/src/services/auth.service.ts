@@ -14,22 +14,25 @@ class AuthService {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async login(params: { email: string, password: string }) {
-    const { email, password } = params;
+  async login(params: { email: string, password: string, role?: string }) {
+    const { email, password, role } = params;
     const user = await this._userRepository.getUserByEmailId(email);
+  
     if (!user) throw new NotFoundError('User not found');
     if (!user.password) throw new BadRequestError('Reset password');
-
-    // check if password is valid;
+    if (role && user.role !== role) throw new UnauthorizedError('Invalid role');
+  
+    // Validate password
     const success = await this.verifyHashPassword(password, user.password);
     if (!success) throw new UnauthorizedError('Invalid Email or Password');
-
-    // generate JWT token;
-    const accessToken = await this.generateJWTToken(user._id);
+  
+    // Generate JWT token
+    const accessToken = await this.generateJWTToken(user._id, user.role);
     if (!accessToken) throw new InternalServerError('Failed to generate accessToken');
-
-    return { accessToken };
+  
+    return { accessToken, role: user.role };
   }
+  
 
   async verifyHashPassword(plainTextPassword: string, hashedPassword: string) {
     return await bcrypt.compare(plainTextPassword, hashedPassword);
@@ -39,21 +42,26 @@ class AuthService {
     return await bcrypt.hash(plainTextPassword, 10);
   }
 
-  async generateJWTToken(userId: string) {
-    const token = jwt.sign({
-      _id: userId.toString(),
-    }, config.JWT_SECRET, { expiresIn: '24h' });
-
+  async generateJWTToken(userId: string, role: string) {
+    const token = jwt.sign(
+      {
+        _id: userId.toString(),
+        role,
+      },
+      config.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+  
     const key = await encryptionKey(config.JWT_CACHE_ENCRYPTION_KEY);
     const encryptedData = await encode(token, key);
     await encodedJWTCacheManager.set({ userId }, encryptedData);
-
+  
     return token;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
   async signup(params: any) {
-    const { firstName, lastName, email, password } = params;
+    const { firstName, lastName, email, password , role} = params;
     const existingUser = await this._userRepository.getUserByEmailId(email);
 
     if (existingUser) throw new BadRequestError('Email address already exists');
@@ -63,15 +71,15 @@ class AuthService {
 
     // send this verificationCode via email to verify.
     const user = await this._userRepository.onBoardUser({
-      firstName, lastName, email, password: hashedPassword
+      firstName, lastName, email, role, password: hashedPassword
     });
     if (!user) throw new InternalServerError('Failed to Onboard user');
 
     // generate JWT Token
-    const accessToken = await this.generateJWTToken(user._id);
+    const accessToken = await this.generateJWTToken(user._id, user.role);
     if (!accessToken) throw new InternalServerError('Failed to generate accessToken');
 
-    return { accessToken };
+    return true;
   }
 
   async profile(userId: string) {
